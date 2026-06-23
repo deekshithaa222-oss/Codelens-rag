@@ -275,17 +275,6 @@ Bottleneck: LLM inference (Ollama quantized ~0.5 tok/sec). To speed up, use vLLM
 
 ---
 
-## Interview Notes
-
-**When asked "Why this architecture?":**
-
-> We chose AST-aware chunking because semantic boundaries (functions, classes) preserve code context better than size-based splits. Hybrid retrieval catches both exact keyword matches (BM25) and semantic intent (embeddings)—dense-only misses keywords. Offline eval avoids $, latency, and data leaks of LLM-based scoring while capturing 70% of quality variance via entity overlap and hallucination detection.
-
-**When asked "What would you change?":**
-
-> For 10M+ chunks, we'd move to Pinecone for vector search and vLLM for LLM batching. For higher quality, we'd train code-specific embeddings (CodeSearchNet) and add an entailment model for eval. See README "How to Scale" section for details and costs.
-
----
 
 ## License
 
