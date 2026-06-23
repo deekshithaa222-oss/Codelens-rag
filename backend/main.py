@@ -1,0 +1,216 @@
+"""FastAPI main application for CodeLens RAG system"""
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Dict, Any
+import uvicorn
+
+from backend.ingest import RepositoryLoader, ASTChunker
+from backend.retrieval.hybrid import HybridRetriever
+from backend.rag import PromptBuilder, LLMClient, GuardrailChecker
+from backend.eval import BatchEvalRunner
+from backend.logger import logger
+
+app = FastAPI(
+    title="CodeLens API",
+    description="AI Code Intelligence Platform",
+    version="0.1.0"
+)
+
+# Add CORS middleware for Streamlit frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize components
+retriever = HybridRetriever()
+prompt_builder = PromptBuilder()
+llm_client = LLMClient()
+guardrails = GuardrailChecker()
+eval_runner = BatchEvalRunner()
+
+
+# Pydantic models
+class QueryRequest(BaseModel):
+    question: str
+
+
+class IngestRequest(BaseModel):
+    repo_path: str
+
+
+class QueryResponse(BaseModel):
+    question: str
+    answer: str
+    sources: List[Dict[str, Any]]
+    faithfulness_score: float = 0.0
+
+
+class HealthResponse(BaseModel):
+    status: str
+    llm_available: bool
+
+
+@app.on_event("startup")
+def startup_event():
+    """Initialize on startup."""
+    logger.info("CodeLens API starting up...")
+
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "ok",
+        "llm_available": llm_client.is_available()
+    }
+
+
+@app.post("/ingest", response_model=Dict[str, Any])
+async def ingest_repository(request: IngestRequest):
+    """Ingest code from a repository.
+    
+    Tradeoff analysis:
+    - We index synchronously (simpler API) but document how to add async
+    - Tree-sitter chunking with regex fallback balances accuracy vs compat
+    """
+    try:
+        logger.info(f"Ingesting repository: {request.repo_path}")
+
+        # Load repository
+        loader = RepositoryLoader(request.repo_path)
+        files = loader.load()
+
+        if not files:
+            raise HTTPException(status_code=400, detail="No code files found")
+
+        # Chunk files
+        chunker = ASTChunker()
+        all_chunks = []
+
+        for file_obj in files:
+            chunks = chunker.chunk(
+                file_obj["content"],
+                file_obj["language"],
+                file_obj["path"]
+            )
+            all_chunks.extend(chunks)
+
+        # Index chunks
+        retriever.index(all_chunks)
+
+        logger.info(f"Indexed {len(all_chunks)} chunks from {len(files)} files")
+
+        return {
+            "status": "success",
+            "files_ingested": len(files),
+            "chunks_created": len(all_chunks),
+            "message": f"Successfully indexed {len(all_chunks)} code chunks"
+        }
+
+    except Exception as e:
+        logger.error(f"Ingestion failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/query", response_model=QueryResponse)
+async def query_code(request: QueryRequest):
+    """Query the indexed code repository.
+    
+    Pipeline:
+    1. Retrieve relevant chunks (hybrid search)
+    2. Build prompt with context
+    3. Generate answer with LLM
+    4. Check guardrails
+    5. Score faithfulness
+    """
+    try:
+        logger.info(f"Processing query: {request.question}")
+
+        # Retrieve context
+        results = retriever.search(request.question, top_k=5)
+
+        if not results:
+            return {
+                "question": request.question,
+                "answer": "No relevant code found. Try indexing a repository first.",
+                "sources": [],
+                "faithfulness_score": 0.0
+            }
+
+        # Extract context
+        context_docs = []
+        for result in results:
+            context_docs.append({
+                "text": result.get("text", ""),
+                "file_path": result.get("metadata", {}).get("file_path", "unknown"),
+                "start_line": result.get("metadata", {}).get("start_line", "?"),
+                "end_line": result.get("metadata", {}).get("end_line", "?"),
+            })
+
+        # Build prompt
+        prompt = prompt_builder.build_qa_prompt(
+            request.question,
+            context_docs
+        )
+
+        # Generate answer
+        answer = llm_client.generate(prompt)
+
+        # Check guardrails
+        is_valid, reason = guardrails.check_response(
+            answer,
+            request.question,
+            "\n".join([doc["text"] for doc in context_docs])
+        )
+
+        if not is_valid:
+            logger.warning(f"Response failed guardrails: {reason}")
+            answer = f"[Guardrail triggered: {reason}]"
+
+        # Score faithfulness
+        faithfulness = 0.0
+        try:
+            scorer_result = eval_runner.scorer.score(
+                answer,
+                "\n".join([doc["text"] for doc in context_docs]),
+                request.question
+            )
+            faithfulness = scorer_result["score"]
+        except Exception as e:
+            logger.debug(f"Faithfulness scoring failed: {e}")
+
+        return {
+            "question": request.question,
+            "answer": answer,
+            "sources": context_docs,
+            "faithfulness_score": faithfulness
+        }
+
+    except Exception as e:
+        logger.error(f"Query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/eval/status", response_model=Dict[str, Any])
+async def eval_status():
+    """Get evaluation status."""
+    eval_set = eval_runner.load_eval_set()
+    return {
+        "eval_set_size": len(eval_set),
+        "eval_set_path": str(eval_runner.eval_dataset_path),
+        "results_count": len(eval_runner.results)
+    }
+
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "backend.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True
+    )

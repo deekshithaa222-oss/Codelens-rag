@@ -1,0 +1,17 @@
+[
+  {
+    "question": "How does the authentication system work?",
+    "context": "def validate_token(token: str) -> bool:\n    try:\n        payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])\n        return payload.get('user_id') is not None\n    except jwt.InvalidTokenError:\n        return False",
+    "expected_answer": "The system validates JWT tokens using HS256 algorithm with a secret key"
+  },
+  {
+    "question": "What database operations are performed?",
+    "context": "class UserRepository:\n    def get_user(self, user_id: int):\n        return self.db.query(User).filter(User.id == user_id).first()\n    \n    def create_user(self, name: str, email: str):\n        user = User(name=name, email=email)\n        self.db.add(user)\n        self.db.commit()\n        return user",
+    "expected_answer": "The repository handles user queries and creation using SQLAlchemy ORM"
+  },
+  {
+    "question": "Describe the caching strategy",
+    "context": "cache = Cache(max_size=1000)\n\ndef get_data(key: str):\n    if cache.exists(key):\n        return cache.get(key)\n    data = fetch_from_db(key)\n    cache.set(key, data)\n    return data",
+    "expected_answer": "The system uses an LRU in-memory cache with 1000 entry limit"
+  }
+]

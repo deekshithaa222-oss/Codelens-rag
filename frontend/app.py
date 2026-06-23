@@ -1,0 +1,271 @@
+"""Streamlit frontend for CodeLens"""
+import streamlit as st
+import requests
+from pathlib import Path
+import json
+from backend.eval import BatchEvalRunner
+
+st.set_page_config(page_title="CodeLens", page_icon="🔍", layout="wide")
+
+# Initialize eval runner
+eval_runner = BatchEvalRunner()
+
+# Configuration
+API_URL = "http://localhost:8000"
+EVAL_SET_PATH = "eval_set.json"
+
+
+def check_api_health():
+    """Check if API is available."""
+    try:
+        response = requests.get(f"{API_URL}/health", timeout=2)
+        return response.status_code == 200
+    except:
+        return False
+
+
+def ingest_repository(repo_path: str):
+    """Ingest a repository."""
+    try:
+        response = requests.post(
+            f"{API_URL}/ingest",
+            json={"repo_path": repo_path},
+            timeout=30
+        )
+        return response.json()
+    except requests.exceptions.Timeout:
+        return {"status": "error", "message": "Ingest timed out. Repository may be large."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def query_repository(question: str):
+    """Query the indexed repository."""
+    try:
+        response = requests.post(
+            f"{API_URL}/query",
+            json={"question": question},
+            timeout=30
+        )
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def load_eval_set():
+    """Load evaluation set."""
+    eval_path = Path(EVAL_SET_PATH)
+    if eval_path.exists():
+        with open(eval_path) as f:
+            return json.load(f)
+    return []
+
+
+# Header
+st.title("🔍 CodeLens: AI Code Intelligence")
+st.markdown("Ask questions about your codebase with **AST-aware chunking**, "
+            "**hybrid retrieval** (dense + sparse), and **offline faithfulness evaluation**.")
+
+# Check API health
+if not check_api_health():
+    st.error(
+        "⚠️ **API is unavailable**. Start the backend with:\n"
+        "`uvicorn backend.main:app --reload`"
+    )
+    st.stop()
+
+st.success("✅ API connected")
+
+# Tabs
+tab1, tab2, tab3, tab4 = st.tabs(["📚 Ingest", "🔍 Query", "📊 Evaluate", "ℹ️ About"])
+
+# Tab 1: Ingest
+with tab1:
+    st.subheader("Ingest Code Repository")
+    st.write("Index a code repository for semantic search.")
+
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        repo_path = st.text_input(
+            "Repository path:",
+            value=".",
+            help="Absolute or relative path to repository root"
+        )
+    with col2:
+        ingest_button = st.button("Ingest", use_container_width=True)
+
+    if ingest_button:
+        with st.spinner("Ingesting repository..."):
+            result = ingest_repository(repo_path)
+
+        if result.get("status") == "success":
+            st.success(
+                f"✅ Indexed {result['files_ingested']} files "
+                f"into {result['chunks_created']} chunks"
+            )
+        else:
+            st.error(f"❌ {result.get('message', 'Unknown error')}")
+
+
+# Tab 2: Query
+with tab2:
+    st.subheader("Query Code Repository")
+    st.write("Ask questions about the indexed code.")
+
+    question = st.text_area(
+        "Your question:",
+        placeholder="e.g., How does authentication work in this codebase?",
+        height=100
+    )
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        query_button = st.button("Search", use_container_width=True, type="primary")
+    with col2:
+        st.write("")  # Spacing
+    with col3:
+        st.write("")  # Spacing
+
+    if query_button and question:
+        with st.spinner("Querying..."):
+            result = query_repository(question)
+
+        if "error" not in result:
+            # Display answer
+            st.subheader("Answer")
+            st.write(result.get("answer", ""))
+
+            # Faithfulness score
+            faithfulness = result.get("faithfulness_score", 0)
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric(
+                    "Faithfulness Score",
+                    f"{faithfulness:.1%}",
+                    help="How well-grounded the answer is in context"
+                )
+            with col2:
+                if faithfulness > 0.7:
+                    st.success("✅ High confidence")
+                elif faithfulness > 0.4:
+                    st.warning("⚠️ Medium confidence")
+                else:
+                    st.error("❌ Low confidence")
+
+            # Sources
+            st.subheader("Sources")
+            sources = result.get("sources", [])
+            for i, source in enumerate(sources, 1):
+                with st.expander(
+                    f"📄 {source.get('file_path', 'unknown')} "
+                    f"(lines {source.get('start_line', '?')}-{source.get('end_line', '?')})"
+                ):
+                    st.code(source.get("text", ""), language="python")
+        else:
+            st.error(f"❌ {result['error']}")
+
+
+# Tab 3: Evaluate
+with tab3:
+    st.subheader("Offline Faithfulness Evaluation")
+    st.write(
+        "Evaluate RAG system on a test set using heuristic faithfulness scoring "
+        "(no external LLM calls)."
+    )
+
+    eval_set = load_eval_set()
+
+    if not eval_set:
+        st.warning(
+            "No evaluation set found. Create `eval_set.json` with structure:\n"
+            "```json\n"
+            "[{\"question\": \"...\", \"context\": \"...\", \"expected\": \"...\"}]\n"
+            "```"
+        )
+    else:
+        st.info(f"📋 Loaded {len(eval_set)} evaluation cases")
+
+        if st.button("Run Evaluation", type="primary"):
+            with st.spinner("Evaluating..."):
+                # Run evaluation
+                cases = []
+                for item in eval_set[:3]:  # Limit to 3 for demo
+                    result = query_repository(item.get("question", ""))
+                    cases.append({
+                        "question": item.get("question"),
+                        "response": result.get("answer", ""),
+                        "context": item.get("context", "")
+                    })
+
+                metrics = eval_runner.evaluate(cases)
+
+            # Display metrics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Evals", metrics["total_evals"])
+            with col2:
+                st.metric("Mean Faithfulness", f"{metrics['mean_faithfulness']:.1%}")
+            with col3:
+                st.metric("Range", f"{metrics['min_faithfulness']:.0%}–{metrics['max_faithfulness']:.0%}")
+            with col4:
+                st.metric("Pass Rate (>70%)", f"{metrics['pass_rate']:.0%}")
+
+            # Detailed results
+            st.subheader("Detailed Results")
+            for i, result in enumerate(metrics["results"], 1):
+                with st.expander(f"Case {i}: {result['question'][:50]}..."):
+                    st.write(f"**Score:** {result['faithfulness']:.1%}")
+                    st.write(f"**Details:** {result['details']['reasoning']}")
+
+
+# Tab 4: About
+with tab4:
+    st.subheader("About CodeLens")
+
+    st.markdown("""
+    **CodeLens** is an AI code intelligence platform with three defensible differentiators:
+
+    #### 1️⃣ AST-Aware Chunking
+    - Uses tree-sitter for semantic code boundaries (functions, classes)
+    - Regex fallback for unsupported languages
+    - **Tradeoff:** Semantic boundaries > naive size-based splits, but tree-sitter requires native deps
+
+    #### 2️⃣ Hybrid Dense+Sparse Retrieval
+    - **Dense:** Sentence transformers for semantic search (60% weight)
+    - **Sparse:** BM25 for exact keyword matches (40% weight)
+    - **Tradeoff:** Catches both semantic + exact matches, higher index cost
+
+    #### 3️⃣ Offline Faithfulness Eval
+    - No external LLM calls—evaluates locally on entity overlap + hallucination checks
+    - Batch eval runner for systematic quality measurement
+    - **Tradeoff:** Heuristic-based, simpler than semantic entailment, but fast + repeatable
+
+    ### Architecture
+    - **Backend:** FastAPI (ingest, retrieval, RAG, evaluation)
+    - **Frontend:** Streamlit (UI + eval runner)
+    - **LLM:** Ollama (self-hosted, offline, quantized models)
+    - **Storage:** ChromaDB (vector) + BM25 (sparse)
+
+    ### Running Locally
+    ```bash
+    # Install dependencies
+    pip install -r requirements.txt
+
+    # Pull a model (e.g., codellama)
+    ollama pull codellama
+
+    # Start Ollama service
+    ollama serve
+
+    # In a new terminal, start backend
+    uvicorn backend.main:app --reload
+
+    # In another terminal, start frontend
+    streamlit run frontend/app.py
+    ```
+
+    ### Key Tradeoffs (see README for full table)
+    - Chunking: AST accuracy vs regex compatibility
+    - Retrieval: Hybrid cost vs quality gains
+    - Evaluation: Heuristic speed vs semantic precision
+    """)
