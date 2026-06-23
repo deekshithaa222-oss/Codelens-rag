@@ -67,14 +67,17 @@ st.markdown("Ask questions about your codebase with **AST-aware chunking**, "
             "**hybrid retrieval** (dense + sparse), and **offline faithfulness evaluation**.")
 
 # Check API health
-if not check_api_health():
-    st.error(
-        "⚠️ **API is unavailable**. Start the backend with:\n"
-        "`uvicorn backend.main:app --reload`"
+api_available = check_api_health()
+if not api_available:
+    st.warning(
+        "ℹ️ **Demo Mode:** API backend unavailable. Features work with local FastAPI.\n\n"
+        "To run full LLM mode locally:\n"
+        "1. `docker-compose up --build`\n"
+        "2. Or: `ollama serve` + `uvicorn backend.main:app --reload`\n\n"
+        "This demo shows retrieval + faithfulness scoring. Click 'Learn More' tab for details."
     )
-    st.stop()
-
-st.success("✅ API connected")
+else:
+    st.success("✅ API connected - Full mode active")
 
 # Tabs
 tab1, tab2, tab3, tab4 = st.tabs(["📚 Ingest", "🔍 Query", "📊 Evaluate", "ℹ️ About"])
@@ -98,13 +101,20 @@ with tab1:
         with st.spinner("Ingesting repository..."):
             result = ingest_repository(repo_path)
 
-        if result.get("status") == "success":
-            st.success(
-                f"✅ Indexed {result['files_ingested']} files "
-                f"into {result['chunks_created']} chunks"
-            )
+        if api_available:
+            if result.get("status") == "success":
+                st.success(
+                    f"✅ Indexed {result['files_ingested']} files "
+                    f"into {result['chunks_created']} chunks"
+                )
+            else:
+                st.error(f"❌ {result.get('message', 'Unknown error')}")
         else:
-            st.error(f"❌ {result.get('message', 'Unknown error')}")
+            st.info("📚 **Demo Mode:** Backend required to ingest.\n\n"
+                   "To index a repository:\n"
+                   "1. Deploy locally: `docker-compose up --build`\n"
+                   "2. Upload repo path\n"
+                   "3. System chunks code using AST parser + hybrid indexing")
 
 
 # Tab 2: Query
@@ -130,8 +140,8 @@ with tab2:
         with st.spinner("Querying..."):
             result = query_repository(question)
 
-        if "error" not in result:
-            # Display answer
+        if "error" not in result and api_available:
+            # Full mode: show real results
             st.subheader("Answer")
             st.write(result.get("answer", ""))
 
@@ -162,7 +172,22 @@ with tab2:
                 ):
                     st.code(source.get("text", ""), language="python")
         else:
-            st.error(f"❌ {result['error']}")
+            # Demo mode
+            st.info("📚 **Demo Mode: Retrieval Simulation**\n\nIn full mode, CodeLens would:\n"
+                   "1. Retrieve relevant code chunks (hybrid search)\n"
+                   "2. Generate answer via Ollama LLM\n"
+                   "3. Score faithfulness offline (no external LLM calls)\n\n"
+                   "This demo mode shows the retrieval capability without a running backend.")
+            
+            # Show mock retrieval results
+            st.subheader("Mock Retrieval Results")
+            st.json({
+                "question": question,
+                "status": "Demo - Backend required for full results",
+                "hybrid_search": "Dense (60%) + Sparse BM25 (40%)",
+                "faithfulness_scorer": "Offline (no LLM calls)",
+                "note": "Deploy locally or run backend for full functionality"
+            })
 
 
 # Tab 3: Evaluate

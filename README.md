@@ -32,6 +32,46 @@ streamlit run frontend/app.py
 docker-compose up --build
 ```
 
+## Deployment
+
+### Option 1: Live Demo (Streamlit Community Cloud) ⭐
+**Free, auto-updating demo — no backend required**
+
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://codelens-rag.streamlit.app)
+
+**What it shows:**
+- ✅ Code ingestion UI (demonstrate AST chunking strategy)
+- ✅ Retrieval results (show hybrid dense+sparse)
+- ✅ Faithfulness scoring (offline evaluation)
+- ✅ Demo mode (graceful fallback when backend unavailable)
+
+**Deploy in 3 steps:**
+1. Go to [https://streamlit.io/cloud](https://streamlit.io/cloud)
+2. Sign in with GitHub
+3. Click "New app" → Select repo `Codelens-rag-` → Branch `master` → File `frontend/app.py`
+4. Deploy! Auto-updates on every `git push`
+
+### Option 2: Full Stack (Local Docker) 🚀
+**Complete RAG system with real LLM**
+
+```bash
+docker-compose up --build
+# Access UI at http://localhost:8501
+```
+
+**What it includes:**
+- ✅ Streamlit UI (http://localhost:8501)
+- ✅ FastAPI Backend (http://localhost:8000)
+- ✅ Ollama LLM (http://localhost:11434)
+- ✅ Real code ingestion and generation
+
+### Option 3: Production Scale (Advanced) 📈
+See "How to Scale" section below for:
+- Deploying UI to Streamlit Cloud
+- API tier to Heroku/Railway
+- LLM tier to GPU server
+- Horizontal scaling with load balancers
+
 ## Architecture
 
 ```
