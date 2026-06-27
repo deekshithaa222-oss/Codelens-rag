@@ -52,7 +52,12 @@ def query_repository(question: str):
         return {"error": str(e)}
 
 
-def analyze_impact(repo_path: str, changed_files: str, changed_symbols: str):
+def analyze_impact(
+    repo_path: str,
+    changed_files: str,
+    changed_symbols: str,
+    refresh_graph: bool,
+):
     """Analyze change impact for files or symbols."""
     files = [item.strip() for item in changed_files.splitlines() if item.strip()]
     symbols = [
@@ -68,6 +73,7 @@ def analyze_impact(repo_path: str, changed_files: str, changed_symbols: str):
                 "repo_path": repo_path,
                 "changed_files": files,
                 "changed_symbols": symbols,
+                "refresh_graph": refresh_graph,
             },
             timeout=30
         )
@@ -242,6 +248,11 @@ with tab3:
         placeholder="LLMClient, generate",
         help="Optional function or class names if you know what changed"
     )
+    refresh_graph = st.checkbox(
+        "Refresh dependency graph",
+        value=False,
+        help="Use this if files changed since the last ingestion"
+    )
 
     if st.button("Analyze Impact", type="primary"):
         if not changed_files.strip():
@@ -250,7 +261,12 @@ with tab3:
             st.info("🧭 **Demo Mode:** Start the FastAPI backend to run impact analysis.")
         else:
             with st.spinner("Analyzing dependency graph..."):
-                result = analyze_impact(impact_repo_path, changed_files, changed_symbols)
+                result = analyze_impact(
+                    impact_repo_path,
+                    changed_files,
+                    changed_symbols,
+                    refresh_graph
+                )
 
             if "error" in result:
                 st.error(result["error"])
@@ -268,6 +284,7 @@ with tab3:
                 st.write(result.get("summary", ""))
 
                 stats = result.get("graph_stats", {})
+                cache = result.get("graph_cache", {})
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("Python Files", stats.get("python_files_analyzed", 0))
@@ -275,6 +292,12 @@ with tab3:
                     st.metric("Related Files", stats.get("related_files_found", 0))
                 with col3:
                     st.metric("Changed Found", stats.get("changed_files_found", 0))
+
+                st.caption(
+                    f"Graph source: {cache.get('source', 'unknown')} | "
+                    f"parsed: {cache.get('parsed_files', 0)} | "
+                    f"reused: {cache.get('reused_files', 0)}"
+                )
 
                 reasons = result.get("risk_reasons", [])
                 if reasons:

@@ -154,7 +154,9 @@ results = hybrid_retriever.search("authentication token validation", top_k=5)
 
 **Why it matters:** Plain code chat answers "what does this do?" Impact analysis answers the more operational question: "if I change this, what might break?"
 
-**Tradeoff:** This MVP uses Python `ast` and static signals, so it is fast and local but not a full language server or runtime tracer.
+**Optimization:** The graph is built during ingestion and persisted to `.codelens/code_graph.json`. Each file gets a SHA-256 content hash, so later ingestion runs only re-parse new or changed files and reuse unchanged graph entries.
+
+**Tradeoff:** This uses a little extra local storage for graph metadata, but impact analysis becomes a fast graph lookup instead of a full repository parse. It is still Python-focused and not a full language server or runtime tracer.
 
 **Code location:** [`backend/analysis/impact_analyzer.py`](backend/analysis/impact_analyzer.py)
 
@@ -206,7 +208,7 @@ result = scorer.score(
 | **Embeddings** | Sentence-transformers | Offline, open-source, fast | Lower quality than proprietary | Privacy + latency + cost |
 | **Vector DB** | ChromaDB | Self-hosted, simple, persistent | No cloud scale | Easy deployment, full control |
 | **Sparse Search** | BM25 | Fast, interpretable | Extra index | Catches exact matches |
-| **Impact Analysis** | Python `ast` graph | Local, deterministic, no LLM needed | Python-only MVP | Finds blast radius and tests |
+| **Impact Analysis** | Cached Python `ast` graph | Local, deterministic, no LLM needed | Small graph cache + Python-only MVP | Fast blast radius and test lookup |
 | **LLM** | Ollama (quantized) | Offline, free, private | Lower quality than GPT-4 | No API costs, deterministic |
 | **Evaluation** | Heuristic (entity overlap) | Offline, reproducible | ~70% semantic precision | 100x cheaper than LLM evals |
 
@@ -273,7 +275,8 @@ curl -X POST http://localhost:8000/impact \
   -d '{
     "repo_path": ".",
     "changed_files": ["backend/rag/llm.py"],
-    "changed_symbols": ["LLMClient", "generate"]
+    "changed_symbols": ["LLMClient", "generate"],
+    "refresh_graph": false
   }'
 ```
 

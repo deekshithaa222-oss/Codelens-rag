@@ -9,7 +9,7 @@ from backend.ingest import RepositoryLoader, ASTChunker
 from backend.retrieval.hybrid import HybridRetriever
 from backend.rag import PromptBuilder, LLMClient, GuardrailChecker
 from backend.eval import BatchEvalRunner
-from backend.analysis import ImpactAnalyzer
+from backend.analysis import CodeGraphBuilder, ImpactAnalyzer
 from backend.logger import logger
 
 app = FastAPI(
@@ -49,6 +49,7 @@ class ImpactRequest(BaseModel):
     repo_path: str = "."
     changed_files: List[str]
     changed_symbols: List[str] = []
+    refresh_graph: bool = False
 
 
 class QueryResponse(BaseModel):
@@ -111,12 +112,19 @@ async def ingest_repository(request: IngestRequest):
         # Index chunks
         retriever.index(all_chunks)
 
+        # Build/update dependency graph cache for fast impact analysis.
+        graph = CodeGraphBuilder(request.repo_path).build_cached()
+        graph_cache = graph.get("cache", {})
+
         logger.info(f"Indexed {len(all_chunks)} chunks from {len(files)} files")
 
         return {
             "status": "success",
             "files_ingested": len(files),
             "chunks_created": len(all_chunks),
+            "graph_files_analyzed": len(graph.get("files", {})),
+            "graph_parsed_files": graph_cache.get("parsed_files", 0),
+            "graph_reused_files": graph_cache.get("reused_files", 0),
             "message": f"Successfully indexed {len(all_chunks)} code chunks"
         }
 
@@ -220,6 +228,7 @@ async def analyze_impact(request: ImpactRequest):
             request.repo_path,
             request.changed_files,
             request.changed_symbols,
+            request.refresh_graph,
         )
     except HTTPException:
         raise

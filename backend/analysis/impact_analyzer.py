@@ -13,9 +13,14 @@ class ImpactAnalyzer:
         repo_path: str,
         changed_files: List[str],
         changed_symbols: List[str] = None,
+        refresh_graph: bool = False,
     ) -> Dict[str, Any]:
         changed_symbols = changed_symbols or []
-        graph = CodeGraphBuilder(repo_path).build()
+        graph_builder = CodeGraphBuilder(repo_path)
+        graph = None if refresh_graph else graph_builder.load_cached_graph()
+        if graph is None:
+            graph = graph_builder.build_cached()
+
         normalized_changes = self._normalize_changed_files(
             repo_path,
             changed_files,
@@ -46,6 +51,7 @@ class ImpactAnalyzer:
                 "changed_files_found": len(normalized_changes),
                 "related_files_found": len(affected["related_files"]),
             },
+            "graph_cache": graph.get("cache", {}),
         }
 
     def _normalize_changed_files(

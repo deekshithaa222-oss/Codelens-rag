@@ -1,5 +1,7 @@
 """Build a lightweight Python dependency graph for impact analysis."""
 import ast
+import hashlib
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -17,6 +19,7 @@ class CodeGraphBuilder:
     def __init__(self, repo_path: str, max_file_size: int = 100000):
         self.repo_path = Path(repo_path).resolve()
         self.max_file_size = max_file_size
+        self.cache_path = self.repo_path / ".codelens" / "code_graph.json"
 
     def build(self) -> Dict[str, Any]:
         """Build a graph for Python files in the repository."""
@@ -50,6 +53,117 @@ class CodeGraphBuilder:
             "files": files,
             "module_to_file": module_to_file,
             "symbol_to_files": symbol_to_files,
+            "cache": {
+                "enabled": False,
+                "source": "full_rebuild",
+                "parsed_files": len(files),
+                "reused_files": 0,
+                "deleted_files": 0,
+            },
+        }
+
+    def build_cached(self) -> Dict[str, Any]:
+        """Build or incrementally update the cached graph.
+
+        File hashes are used as a cheap gate: unchanged files reuse their
+        previous AST extraction, while new or changed files are parsed again.
+        """
+        cached = self.load_cached_graph() or {}
+        cached_files = cached.get("files", {})
+        files: Dict[str, Dict[str, Any]] = {}
+        parsed_files = 0
+        reused_files = 0
+
+        for path in self._iter_python_files():
+            rel_path = self._relative_path(path)
+            try:
+                content = path.read_text(encoding="utf-8", errors="ignore")
+            except Exception as exc:
+                logger.warning(f"Skipping {rel_path}: {exc}")
+                continue
+
+            content_hash = self._hash_content(content)
+            cached_node = cached_files.get(rel_path)
+
+            if cached_node and cached_node.get("hash") == content_hash:
+                files[rel_path] = cached_node
+                reused_files += 1
+                continue
+
+            try:
+                tree = ast.parse(content)
+            except SyntaxError as exc:
+                logger.warning(f"Skipping {rel_path}: syntax error: {exc}")
+                continue
+            except Exception as exc:
+                logger.warning(f"Skipping {rel_path}: {exc}")
+                continue
+
+            node = self._extract_file_node(tree, rel_path)
+            node["hash"] = content_hash
+            files[rel_path] = node
+            parsed_files += 1
+
+        graph = self._assemble_graph(files)
+        graph["cache"] = {
+            "enabled": True,
+            "source": "incremental_update",
+            "path": str(self.cache_path),
+            "parsed_files": parsed_files,
+            "reused_files": reused_files,
+            "deleted_files": len(set(cached_files) - set(files)),
+        }
+        self.save_graph(graph)
+        return graph
+
+    def load_cached_graph(self) -> Optional[Dict[str, Any]]:
+        """Load a previously persisted graph, if available."""
+        if not self.cache_path.exists():
+            return None
+        try:
+            with self.cache_path.open() as f:
+                graph = json.load(f)
+            if graph.get("repo_path") != str(self.repo_path):
+                return None
+            graph.setdefault("cache", {})
+            graph["cache"].update({
+                "enabled": True,
+                "source": "cache",
+                "path": str(self.cache_path),
+                "parsed_files": 0,
+                "reused_files": len(graph.get("files", {})),
+                "deleted_files": 0,
+            })
+            return graph
+        except Exception as exc:
+            logger.warning(f"Failed to load graph cache {self.cache_path}: {exc}")
+            return None
+
+    def save_graph(self, graph: Dict[str, Any]) -> None:
+        """Persist graph metadata for fast impact analysis."""
+        try:
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.cache_path.open("w") as f:
+                json.dump(graph, f, indent=2, sort_keys=True)
+        except Exception as exc:
+            logger.warning(f"Failed to save graph cache {self.cache_path}: {exc}")
+
+    def _assemble_graph(self, files: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        module_to_file: Dict[str, str] = {}
+        symbol_to_files: Dict[str, List[str]] = {}
+
+        for rel_path, node in files.items():
+            module_to_file[node["module"]] = rel_path
+            for symbol in node["defines"]:
+                symbol_to_files.setdefault(symbol, []).append(rel_path)
+
+        self._resolve_edges(files, module_to_file, symbol_to_files)
+
+        return {
+            "repo_path": str(self.repo_path),
+            "files": files,
+            "module_to_file": module_to_file,
+            "symbol_to_files": symbol_to_files,
         }
 
     def _iter_python_files(self):
@@ -72,6 +186,9 @@ class CodeGraphBuilder:
 
     def _relative_path(self, path: Path) -> str:
         return str(path.relative_to(self.repo_path))
+
+    def _hash_content(self, content: str) -> str:
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
     def _module_name(self, rel_path: str) -> str:
         module = rel_path[:-3].replace("/", ".")
