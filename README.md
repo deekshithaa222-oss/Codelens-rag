@@ -1,6 +1,6 @@
 # CodeLens: AI Code Intelligence Platform
 
-An enterprise-grade AI code intelligence platform with three defensible differentiators: **AST-aware chunking**, **hybrid dense+sparse retrieval**, and **offline faithfulness evaluation**.
+An enterprise-grade AI code intelligence platform with four defensible differentiators: **AST-aware chunking**, **hybrid dense+sparse retrieval**, **change impact analysis**, and **offline faithfulness evaluation**.
 
 ## Quick Start
 
@@ -100,7 +100,7 @@ See "How to Scale" section below for:
     └──────┘      └──────────┘     └───────┘
 ```
 
-## Three Defensible Differentiators
+## Four Defensible Differentiators
 
 ### 1. AST-Aware Code Chunking
 
@@ -148,7 +148,29 @@ results = hybrid_retriever.search("authentication token validation", top_k=5)
 
 ---
 
-### 3. Offline Faithfulness Evaluation
+### 3. Change Impact Analysis
+
+**What it does:** Builds a lightweight Python dependency graph from imports, functions, classes, and calls, then estimates which files and tests may be affected by a change.
+
+**Why it matters:** Plain code chat answers "what does this do?" Impact analysis answers the more operational question: "if I change this, what might break?"
+
+**Tradeoff:** This MVP uses Python `ast` and static signals, so it is fast and local but not a full language server or runtime tracer.
+
+**Code location:** [`backend/analysis/impact_analyzer.py`](backend/analysis/impact_analyzer.py)
+
+```python
+analyzer = ImpactAnalyzer()
+result = analyzer.analyze(
+    repo_path=".",
+    changed_files=["backend/rag/llm.py"],
+    changed_symbols=["LLMClient", "generate"]
+)
+# Result includes risk, direct dependents, related files, and suggested tests
+```
+
+---
+
+### 4. Offline Faithfulness Evaluation
 
 **What it does:** Scores response quality without external LLM calls—using entity overlap, hallucination detection, and question coverage.
 
@@ -184,6 +206,7 @@ result = scorer.score(
 | **Embeddings** | Sentence-transformers | Offline, open-source, fast | Lower quality than proprietary | Privacy + latency + cost |
 | **Vector DB** | ChromaDB | Self-hosted, simple, persistent | No cloud scale | Easy deployment, full control |
 | **Sparse Search** | BM25 | Fast, interpretable | Extra index | Catches exact matches |
+| **Impact Analysis** | Python `ast` graph | Local, deterministic, no LLM needed | Python-only MVP | Finds blast radius and tests |
 | **LLM** | Ollama (quantized) | Offline, free, private | Lower quality than GPT-4 | No API costs, deterministic |
 | **Evaluation** | Heuristic (entity overlap) | Offline, reproducible | ~70% semantic precision | 100x cheaper than LLM evals |
 
@@ -241,6 +264,19 @@ curl -X POST http://localhost:8000/query \
   -d '{"question": "How does authentication work?"}'
 ```
 
+### `POST /impact`
+Analyze likely blast radius for changed Python files.
+
+```bash
+curl -X POST http://localhost:8000/impact \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_path": ".",
+    "changed_files": ["backend/rag/llm.py"],
+    "changed_symbols": ["LLMClient", "generate"]
+  }'
+```
+
 ### `GET /health`
 Health check (includes LLM availability).
 
@@ -253,10 +289,10 @@ curl http://localhost:8000/health
 ## Testing
 
 ```bash
-# Run pytest suite (chunking, retrieval, evaluation)
-pytest tests/test_retrieval.py -v
+# Run pytest suite
+pytest -q
 
-# Expected: 12 tests pass (chunking, BM25, faithfulness scoring)
+# Covers chunking, BM25, faithfulness scoring, and impact analysis
 ```
 
 ---
@@ -270,6 +306,10 @@ CodeLens/
 │   ├── main.py                 # FastAPI app
 │   ├── logger.py               # Logging config
 │   ├── cache.py                # In-memory cache
+│   ├── analysis/
+│   │   ├── __init__.py
+│   │   ├── graph_builder.py    # Python AST dependency graph
+│   │   └── impact_analyzer.py  # Blast radius + test suggestions
 │   ├── ingest/
 │   │   ├── __init__.py
 │   │   ├── loader.py           # Repo loader + secret filtering
@@ -294,7 +334,8 @@ CodeLens/
 │   └── app.py                  # Streamlit UI
 ├── tests/
 │   ├── __init__.py
-│   └── test_retrieval.py       # Pytest tests
+│   ├── test_impact_analysis.py # Impact analyzer tests
+│   └── test_retrieval.py       # Retrieval/eval tests
 ├── eval_set.json               # Sample evaluation dataset
 ├── requirements.txt
 ├── Dockerfile

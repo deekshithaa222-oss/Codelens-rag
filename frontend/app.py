@@ -52,6 +52,30 @@ def query_repository(question: str):
         return {"error": str(e)}
 
 
+def analyze_impact(repo_path: str, changed_files: str, changed_symbols: str):
+    """Analyze change impact for files or symbols."""
+    files = [item.strip() for item in changed_files.splitlines() if item.strip()]
+    symbols = [
+        item.strip()
+        for item in changed_symbols.replace("\n", ",").split(",")
+        if item.strip()
+    ]
+
+    try:
+        response = requests.post(
+            f"{API_URL}/impact",
+            json={
+                "repo_path": repo_path,
+                "changed_files": files,
+                "changed_symbols": symbols,
+            },
+            timeout=30
+        )
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def load_eval_set():
     """Load evaluation set."""
     eval_path = Path(EVAL_SET_PATH)
@@ -80,7 +104,13 @@ else:
     st.success("✅ API connected - Full mode active")
 
 # Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["📚 Ingest", "🔍 Query", "📊 Evaluate", "ℹ️ About"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📚 Ingest",
+    "🔍 Query",
+    "🧭 Impact",
+    "📊 Evaluate",
+    "ℹ️ About"
+])
 
 # Tab 1: Ingest
 with tab1:
@@ -190,8 +220,98 @@ with tab2:
             })
 
 
-# Tab 3: Evaluate
+# Tab 3: Impact
 with tab3:
+    st.subheader("Change Impact Analysis")
+    st.write("Find likely affected files and tests before reviewing or shipping a code change.")
+
+    impact_repo_path = st.text_input(
+        "Repository path",
+        value=".",
+        help="Repository root used for analysis",
+        key="impact_repo_path"
+    )
+    changed_files = st.text_area(
+        "Changed files",
+        placeholder="backend/rag/llm.py\nbackend/main.py",
+        height=100,
+        help="One file path per line, relative to the repository root"
+    )
+    changed_symbols = st.text_input(
+        "Changed symbols",
+        placeholder="LLMClient, generate",
+        help="Optional function or class names if you know what changed"
+    )
+
+    if st.button("Analyze Impact", type="primary"):
+        if not changed_files.strip():
+            st.warning("Add at least one changed file.")
+        elif not api_available:
+            st.info("🧭 **Demo Mode:** Start the FastAPI backend to run impact analysis.")
+        else:
+            with st.spinner("Analyzing dependency graph..."):
+                result = analyze_impact(impact_repo_path, changed_files, changed_symbols)
+
+            if "error" in result:
+                st.error(result["error"])
+            else:
+                risk = result.get("risk", "unknown")
+                if risk == "high":
+                    st.error(f"Risk: {risk.upper()}")
+                elif risk == "medium":
+                    st.warning(f"Risk: {risk.upper()}")
+                elif risk == "low":
+                    st.success(f"Risk: {risk.upper()}")
+                else:
+                    st.info(f"Risk: {risk.upper()}")
+
+                st.write(result.get("summary", ""))
+
+                stats = result.get("graph_stats", {})
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Python Files", stats.get("python_files_analyzed", 0))
+                with col2:
+                    st.metric("Related Files", stats.get("related_files_found", 0))
+                with col3:
+                    st.metric("Changed Found", stats.get("changed_files_found", 0))
+
+                reasons = result.get("risk_reasons", [])
+                if reasons:
+                    st.subheader("Risk Reasons")
+                    for reason in reasons:
+                        st.write(f"- {reason}")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.subheader("Direct Dependents")
+                    dependents = result.get("direct_dependents", [])
+                    if dependents:
+                        for file_path in dependents:
+                            st.code(file_path, language="text")
+                    else:
+                        st.write("No direct dependents found.")
+
+                with col2:
+                    st.subheader("Suggested Tests")
+                    tests = result.get("suggested_tests", [])
+                    if tests:
+                        for file_path in tests:
+                            st.code(file_path, language="text")
+                    else:
+                        st.write("No directly related tests found.")
+
+                with st.expander("Related Files"):
+                    related = result.get("related_files", [])
+                    if related:
+                        for file_path in related:
+                            st.code(file_path, language="text")
+                    else:
+                        st.write("No related files found.")
+
+
+# Tab 4: Evaluate
+with tab4:
     st.subheader("Offline Faithfulness Evaluation")
     st.write(
         "Evaluate RAG system on a test set using heuristic faithfulness scoring "
@@ -243,8 +363,8 @@ with tab3:
                     st.write(f"**Details:** {result['details']['reasoning']}")
 
 
-# Tab 4: About
-with tab4:
+# Tab 5: About
+with tab5:
     st.subheader("About CodeLens")
 
     st.markdown("""

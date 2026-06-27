@@ -9,6 +9,7 @@ from backend.ingest import RepositoryLoader, ASTChunker
 from backend.retrieval.hybrid import HybridRetriever
 from backend.rag import PromptBuilder, LLMClient, GuardrailChecker
 from backend.eval import BatchEvalRunner
+from backend.analysis import ImpactAnalyzer
 from backend.logger import logger
 
 app = FastAPI(
@@ -32,6 +33,7 @@ prompt_builder = PromptBuilder()
 llm_client = LLMClient()
 guardrails = GuardrailChecker()
 eval_runner = BatchEvalRunner()
+impact_analyzer = ImpactAnalyzer()
 
 
 # Pydantic models
@@ -41,6 +43,12 @@ class QueryRequest(BaseModel):
 
 class IngestRequest(BaseModel):
     repo_path: str
+
+
+class ImpactRequest(BaseModel):
+    repo_path: str = "."
+    changed_files: List[str]
+    changed_symbols: List[str] = []
 
 
 class QueryResponse(BaseModel):
@@ -193,6 +201,30 @@ async def query_code(request: QueryRequest):
 
     except Exception as e:
         logger.error(f"Query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/impact", response_model=Dict[str, Any])
+async def analyze_impact(request: ImpactRequest):
+    """Analyze likely blast radius for changed Python files.
+
+    This builds a lightweight dependency graph from imports, definitions,
+    and function calls, then reports affected files and likely tests.
+    """
+    try:
+        if not request.changed_files:
+            raise HTTPException(status_code=400, detail="changed_files is required")
+
+        logger.info(f"Analyzing impact for: {request.changed_files}")
+        return impact_analyzer.analyze(
+            request.repo_path,
+            request.changed_files,
+            request.changed_symbols,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Impact analysis failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
