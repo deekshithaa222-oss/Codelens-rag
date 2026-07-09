@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "codelens": {
+      "command": "python",
+      "args": ["-m", "backend.mcp_server"],
+      "env": {
+        "PYTHONPATH": "."
+      }
+    }
+  }
+}

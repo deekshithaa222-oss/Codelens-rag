@@ -391,22 +391,35 @@ with tab5:
     st.subheader("About CodeLens")
 
     st.markdown("""
-    **CodeLens** is an AI code intelligence platform with three defensible differentiators:
+    **CodeLens** is an AI code intelligence platform with four defensible differentiators:
 
-    #### 1️⃣ AST-Aware Chunking
+    #### 1. AST-Aware Chunking
     - Uses tree-sitter for semantic code boundaries (functions, classes)
     - Regex fallback for unsupported languages
     - **Tradeoff:** Semantic boundaries > naive size-based splits, but tree-sitter requires native deps
 
-    #### 2️⃣ Hybrid Dense+Sparse Retrieval
+    #### 2. Hybrid Dense+Sparse Retrieval
     - **Dense:** Sentence transformers for semantic search (60% weight)
     - **Sparse:** BM25 for exact keyword matches (40% weight)
     - **Tradeoff:** Catches both semantic + exact matches, higher index cost
 
-    #### 3️⃣ Offline Faithfulness Eval
+    #### 3. Change Impact Analysis
+    - Builds a cached Python dependency graph from imports, definitions, and calls
+    - Estimates affected files and suggested tests before a change ships
+    - **Tradeoff:** Fast and local, but Python-focused and not a full runtime tracer
+
+    #### 4. Offline Faithfulness Eval
     - No external LLM calls—evaluates locally on entity overlap + hallucination checks
     - Batch eval runner for systematic quality measurement
     - **Tradeoff:** Heuristic-based, simpler than semantic entailment, but fast + repeatable
+
+    ### MCP Value
+    MCP can add value as an optional enterprise integration layer when CodeLens needs context beyond local files:
+    - GitHub/GitLab issues, PRs, commits, reviews, branches, and CI status
+    - Internal docs, ADRs, runbooks, service catalogs, and ownership metadata
+    - Logs, incidents, deployments, feature flags, database schemas, and migration history
+
+    Best fit: use read-only MCP servers for repository platforms and internal docs first. Add logs, databases, and deployment tools after access controls, audit logging, and secret redaction are in place.
 
     ### Architecture
     - **Backend:** FastAPI (ingest, retrieval, RAG, evaluation)

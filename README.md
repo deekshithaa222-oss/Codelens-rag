@@ -27,6 +27,39 @@ uvicorn backend.main:app --reload
 streamlit run frontend/app.py
 ```
 
+### MCP Server
+
+CodeLens also ships a local MCP server for MCP-capable IDEs and agent hosts:
+
+```bash
+python -m backend.mcp_server
+```
+
+Example client config is available in [`mcp.example.json`](mcp.example.json):
+
+```json
+{
+  "mcpServers": {
+    "codelens": {
+      "command": "python",
+      "args": ["-m", "backend.mcp_server"],
+      "env": {
+        "PYTHONPATH": "."
+      }
+    }
+  }
+}
+```
+
+The MCP server exposes:
+
+- `ingest_repository`: index a repository for CodeLens retrieval
+- `search_code`: run hybrid dense+sparse code search
+- `answer_question`: answer with retrieval, Ollama, guardrails, and faithfulness scoring
+- `analyze_change_impact`: estimate blast radius and suggested tests
+- `score_faithfulness`: run offline grounding checks
+- `evaluation_status`: inspect local eval set status
+
 **Or use Docker:**
 ```bash
 docker-compose up --build
@@ -200,6 +233,28 @@ result = scorer.score(
 
 ---
 
+## MCP Integration Value
+
+MCP (Model Context Protocol) adds the most value when CodeLens needs trusted context from enterprise systems beyond the local repository. It should be treated as an integration layer, not as a replacement for the current retrieval and analysis pipeline.
+
+**Best MCP use cases for CodeLens:**
+
+- **Repository platforms:** GitHub/GitLab issues, PRs, commits, reviews, branch metadata, and CI status.
+- **Internal documentation:** Architecture docs, runbooks, ADRs, onboarding guides, and service catalogs.
+- **Operational systems:** Logs, incidents, traces, feature flags, deployments, and alert history.
+- **Databases:** Read-only schema discovery, migration history, sampled development data, and data lineage.
+- **Ownership metadata:** CODEOWNERS, team directories, service ownership, and escalation paths.
+
+**Why it helps:** Local RAG can explain code, but MCP lets the assistant answer enterprise questions like "which PR introduced this?", "who owns this service?", "what incident involved this module?", or "what deployment changed before this error started?"
+
+**Tradeoff:** MCP increases setup and permissions complexity. For local-only demos, the current filesystem, retrieval, impact analysis, and offline eval are enough. For a real enterprise deployment, MCP makes CodeLens much more useful because it connects code understanding to the systems teams already use.
+
+**Recommended MVP:** Start with read-only MCP servers for GitHub/GitLab and internal docs. Add production logs, databases, and deployment tools only after access controls, audit logging, and secret redaction are in place.
+
+**Local server:** This repo includes a stdio MCP server at [`backend/mcp_server.py`](backend/mcp_server.py). It exposes CodeLens tools to MCP hosts while keeping repository indexing, retrieval, impact analysis, and faithfulness scoring local.
+
+---
+
 ## Tradeoff Analysis Table
 
 | Component | Choice | Why | Cost | Benefit |
@@ -211,6 +266,7 @@ result = scorer.score(
 | **Impact Analysis** | Cached Python `ast` graph | Local, deterministic, no LLM needed | Small graph cache + Python-only MVP | Fast blast radius and test lookup |
 | **LLM** | Ollama (quantized) | Offline, free, private | Lower quality than GPT-4 | No API costs, deterministic |
 | **Evaluation** | Heuristic (entity overlap) | Offline, reproducible | ~70% semantic precision | 100x cheaper than LLM evals |
+| **MCP** | Optional read-only enterprise connectors | Brings in PRs, docs, logs, schemas, ownership | Setup, permissions, audit controls | Turns local code chat into workflow-aware code intelligence |
 
 ---
 
@@ -309,6 +365,7 @@ CodeLens/
 │   ├── main.py                 # FastAPI app
 │   ├── logger.py               # Logging config
 │   ├── cache.py                # In-memory cache
+│   ├── mcp_server.py           # MCP stdio server exposing CodeLens tools
 │   ├── analysis/
 │   │   ├── __init__.py
 │   │   ├── graph_builder.py    # Python AST dependency graph
@@ -340,6 +397,7 @@ CodeLens/
 │   ├── test_impact_analysis.py # Impact analyzer tests
 │   └── test_retrieval.py       # Retrieval/eval tests
 ├── eval_set.json               # Sample evaluation dataset
+├── mcp.example.json            # Example MCP host configuration
 ├── requirements.txt
 ├── Dockerfile
 ├── Dockerfile.streamlit

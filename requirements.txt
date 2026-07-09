@@ -1,8 +1,9 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+fastapi==0.139.0
+uvicorn[standard]==0.51.0
 streamlit==1.28.1
 requests==2.31.0
-pydantic==2.5.0
+pydantic==2.13.4
+mcp==1.9.4
 sentence-transformers==2.2.2
 chromadb==0.4.21
 numpy==1.26.2
