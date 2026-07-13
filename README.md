@@ -189,6 +189,8 @@ results = hybrid_retriever.search("authentication token validation", top_k=5)
 
 **Optimization:** The graph is built during ingestion and persisted to `.codelens/code_graph.json`. Each file gets a SHA-256 content hash, so later ingestion runs only re-parse new or changed files and reuse unchanged graph entries.
 
+**LLM explanation:** The graph-based result remains the source of truth. When Ollama is available, CodeLens sends the structured impact result to the local LLM only as a presentation layer, asking it to rewrite the risk, dependents, and suggested tests into a clearer developer explanation without inventing extra files.
+
 **Tradeoff:** This uses a little extra local storage for graph metadata, but impact analysis becomes a fast graph lookup instead of a full repository parse. It is still Python-focused and not a full language server or runtime tracer.
 
 **Code location:** [`backend/analysis/impact_analyzer.py`](backend/analysis/impact_analyzer.py)
@@ -200,7 +202,8 @@ result = analyzer.analyze(
     changed_files=["backend/rag/llm.py"],
     changed_symbols=["LLMClient", "generate"]
 )
-# Result includes risk, direct dependents, related files, and suggested tests
+# Result includes risk, direct dependents, related files, suggested tests,
+# and an optional llm_explanation when the local LLM is available.
 ```
 
 ---

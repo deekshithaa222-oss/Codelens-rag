@@ -285,6 +285,14 @@ with tab3:
 
                 st.write(result.get("summary", ""))
 
+                explanation = result.get("llm_explanation")
+                explanation_status = result.get("llm_explanation_status")
+                if explanation:
+                    st.subheader("Explanation")
+                    st.write(explanation)
+                elif explanation_status in {"unavailable", "error"}:
+                    st.caption("LLM explanation unavailable; showing graph-based impact results.")
+
                 stats = result.get("graph_stats", {})
                 cache = result.get("graph_cache", {})
                 col1, col2, col3 = st.columns(3)

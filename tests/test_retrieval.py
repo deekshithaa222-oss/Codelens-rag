@@ -4,6 +4,7 @@ from pathlib import Path
 from backend.ingest import RepositoryLoader, ASTChunker
 from backend.retrieval.bm25 import BM25Retriever
 from backend.eval import FaithfulnessScorer
+from backend.rag import PromptBuilder
 
 
 @pytest.fixture
@@ -150,6 +151,23 @@ class TestFaithfulness:
 
         result = scorer.score(response, context)
         assert result["hallucination_rate"] > 0
+
+
+class TestPromptBuilder:
+    """Test LLM prompt construction."""
+
+    def test_impact_prompt_marks_graph_as_source_of_truth(self):
+        """Test that impact explanation prompt constrains the LLM."""
+        prompt = PromptBuilder().build_impact_explanation_prompt({
+            "risk": "medium",
+            "direct_dependents": ["backend/main.py"],
+            "suggested_tests": ["tests/test_main.py"],
+        })
+
+        assert "source of truth" in prompt
+        assert "Do not invent" in prompt
+        assert "backend/main.py" in prompt
+        assert "tests/test_main.py" in prompt
 
 
 if __name__ == "__main__":

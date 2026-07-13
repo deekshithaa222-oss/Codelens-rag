@@ -1,4 +1,5 @@
 """Prompt builder for RAG pipeline"""
+import json
 from typing import List, Dict, Any
 
 
@@ -92,6 +93,25 @@ Summary should cover:
 2. Core components/functions
 3. Data flow
 4. Dependencies"""
+
+    def build_impact_explanation_prompt(self, impact_result: Dict[str, Any]) -> str:
+        """Build prompt for explaining graph-based impact analysis results."""
+        result_json = json.dumps(impact_result, indent=2, sort_keys=True)
+        return f"""You are explaining a code change impact analysis result.
+
+The dependency graph analysis below is the source of truth. Do not invent
+additional files, tests, risks, or dependencies. Explain only what is present
+in the provided result.
+
+## Impact Analysis Result
+{result_json}
+
+## Explanation
+Write a concise explanation for a developer. Include:
+1. The overall risk level and why
+2. Which files are directly affected
+3. Which tests should be considered
+4. One practical next step"""
 
     def _format_context(self, chunks: List[Dict[str, Any]]) -> str:
         """Format retrieved chunks into context string."""

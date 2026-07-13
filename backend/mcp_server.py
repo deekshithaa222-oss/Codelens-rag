@@ -71,6 +71,26 @@ def _ensure_index(repo_path: str) -> Dict[str, Any]:
     }
 
 
+def _add_impact_llm_explanation(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach an optional LLM explanation while keeping graph results authoritative."""
+    if not _llm_client.is_available():
+        result["llm_explanation"] = None
+        result["llm_explanation_status"] = "unavailable"
+        return result
+
+    prompt = _prompt_builder.build_impact_explanation_prompt(result)
+    explanation = _llm_client.generate(prompt, max_tokens=350).strip()
+    if explanation.startswith("[Error:"):
+        result["llm_explanation"] = None
+        result["llm_explanation_status"] = "error"
+        result["llm_explanation_error"] = explanation
+        return result
+
+    result["llm_explanation"] = explanation
+    result["llm_explanation_status"] = "generated"
+    return result
+
+
 @mcp.tool()
 def ingest_repository(repo_path: str = ".") -> Dict[str, Any]:
     """Index a repository for later MCP search and question answering."""
@@ -163,12 +183,13 @@ def analyze_change_impact(
 ) -> Dict[str, Any]:
     """Analyze likely blast radius and suggested tests for changed Python files."""
     resolved_repo_path = str(RepositoryLoader.resolve_repository_path(repo_path))
-    return _impact_analyzer.analyze(
+    result = _impact_analyzer.analyze(
         resolved_repo_path,
         changed_files,
         changed_symbols or [],
         refresh_graph,
     )
+    return _add_impact_llm_explanation(result)
 
 
 @mcp.tool()

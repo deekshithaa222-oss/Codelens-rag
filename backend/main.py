@@ -36,6 +36,26 @@ eval_runner = BatchEvalRunner()
 impact_analyzer = ImpactAnalyzer()
 
 
+def add_impact_llm_explanation(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach an optional LLM explanation without changing graph-based results."""
+    if not llm_client.is_available():
+        result["llm_explanation"] = None
+        result["llm_explanation_status"] = "unavailable"
+        return result
+
+    prompt = prompt_builder.build_impact_explanation_prompt(result)
+    explanation = llm_client.generate(prompt, max_tokens=350).strip()
+    if explanation.startswith("[Error:"):
+        result["llm_explanation"] = None
+        result["llm_explanation_status"] = "error"
+        result["llm_explanation_error"] = explanation
+        return result
+
+    result["llm_explanation"] = explanation
+    result["llm_explanation_status"] = "generated"
+    return result
+
+
 # Pydantic models
 class QueryRequest(BaseModel):
     question: str
@@ -229,12 +249,13 @@ async def analyze_impact(request: ImpactRequest):
 
         logger.info(f"Analyzing impact for: {request.changed_files}")
         resolved_repo_path = str(RepositoryLoader.resolve_repository_path(request.repo_path))
-        return impact_analyzer.analyze(
+        result = impact_analyzer.analyze(
             resolved_repo_path,
             request.changed_files,
             request.changed_symbols,
             request.refresh_graph,
         )
+        return add_impact_llm_explanation(result)
     except HTTPException:
         raise
     except Exception as e:
