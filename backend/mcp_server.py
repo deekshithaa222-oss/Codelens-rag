@@ -49,19 +49,23 @@ def _ensure_index(repo_path: str) -> Dict[str, Any]:
     """Index a repo once per MCP server process."""
     global _indexed_repo_path
 
-    if _indexed_repo_path == repo_path:
+    resolved_repo_path = str(RepositoryLoader.resolve_repository_path(repo_path))
+
+    if _indexed_repo_path == resolved_repo_path:
         return {
             "status": "ready",
-            "repo_path": repo_path,
+            "source": repo_path,
+            "repo_path": resolved_repo_path,
             "message": "Repository is already indexed in this MCP server session.",
         }
 
-    chunks = _load_chunks(repo_path)
+    chunks = _load_chunks(resolved_repo_path)
     _retriever.index(chunks)
-    _indexed_repo_path = repo_path
+    _indexed_repo_path = resolved_repo_path
     return {
         "status": "success",
-        "repo_path": repo_path,
+        "source": repo_path,
+        "repo_path": resolved_repo_path,
         "chunks_created": len(chunks),
         "message": f"Indexed {len(chunks)} code chunks.",
     }
@@ -158,8 +162,9 @@ def analyze_change_impact(
     refresh_graph: bool = False,
 ) -> Dict[str, Any]:
     """Analyze likely blast radius and suggested tests for changed Python files."""
+    resolved_repo_path = str(RepositoryLoader.resolve_repository_path(repo_path))
     return _impact_analyzer.analyze(
-        repo_path,
+        resolved_repo_path,
         changed_files,
         changed_symbols or [],
         refresh_graph,

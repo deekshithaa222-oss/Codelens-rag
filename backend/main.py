@@ -93,6 +93,7 @@ async def ingest_repository(request: IngestRequest):
         # Load repository
         loader = RepositoryLoader(request.repo_path)
         files = loader.load()
+        resolved_repo_path = str(loader.repo_path)
 
         if not files:
             raise HTTPException(status_code=400, detail="No code files found")
@@ -113,13 +114,16 @@ async def ingest_repository(request: IngestRequest):
         retriever.index(all_chunks)
 
         # Build/update dependency graph cache for fast impact analysis.
-        graph = CodeGraphBuilder(request.repo_path).build_cached()
+        graph = CodeGraphBuilder(resolved_repo_path).build_cached()
         graph_cache = graph.get("cache", {})
 
         logger.info(f"Indexed {len(all_chunks)} chunks from {len(files)} files")
 
         return {
             "status": "success",
+            "source": request.repo_path,
+            "source_type": loader.source_type,
+            "repo_path": resolved_repo_path,
             "files_ingested": len(files),
             "chunks_created": len(all_chunks),
             "graph_files_analyzed": len(graph.get("files", {})),
@@ -224,8 +228,9 @@ async def analyze_impact(request: ImpactRequest):
             raise HTTPException(status_code=400, detail="changed_files is required")
 
         logger.info(f"Analyzing impact for: {request.changed_files}")
+        resolved_repo_path = str(RepositoryLoader.resolve_repository_path(request.repo_path))
         return impact_analyzer.analyze(
-            request.repo_path,
+            resolved_repo_path,
             request.changed_files,
             request.changed_symbols,
             request.refresh_graph,

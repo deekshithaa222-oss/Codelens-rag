@@ -53,7 +53,7 @@ Example client config is available in [`mcp.example.json`](mcp.example.json):
 
 The MCP server exposes:
 
-- `ingest_repository`: index a repository for CodeLens retrieval
+- `ingest_repository`: clone/index a GitHub repository or local path for CodeLens retrieval
 - `search_code`: run hybrid dense+sparse code search
 - `answer_question`: answer with retrieval, Ollama, guardrails, and faithfulness scoring
 - `analyze_change_impact`: estimate blast radius and suggested tests
@@ -118,7 +118,7 @@ See "How to Scale" section below for:
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
 │  │   Ingest     │  │  Retrieval   │  │     RAG      │      │
 │  ├──────────────┤  ├──────────────┤  ├──────────────┤      │
-│  │ • Repo Load  │  │ • Embeddings │  │ • Prompt     │      │
+│  │ • Git Clone  │  │ • Embeddings │  │ • Prompt     │      │
 │  │ • AST Parser │  │ • ChromaDB   │  │ • LLM Call   │      │
 │  │ • Chunking   │  │ • BM25       │  │ • Guardrails │      │
 │  │ • Filtering  │  │ • Hybrid     │  │ • Scoring    │      │
@@ -305,7 +305,15 @@ MCP (Model Context Protocol) adds the most value when CodeLens needs trusted con
 ## API Reference
 
 ### `POST /ingest`
-Ingest a code repository.
+Ingest a local code repository or clone a remote GitHub/git repository into `.codelens/repos`.
+
+```bash
+curl -X POST http://localhost:8000/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"repo_path": "https://github.com/org/repo.git"}'
+```
+
+Local paths are also supported:
 
 ```bash
 curl -X POST http://localhost:8000/ingest \

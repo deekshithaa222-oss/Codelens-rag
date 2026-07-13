@@ -121,14 +121,14 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # Tab 1: Ingest
 with tab1:
     st.subheader("Ingest Code Repository")
-    st.write("Index a code repository for semantic search.")
+    st.write("Index a local repository path or GitHub URL for semantic search.")
 
     col1, col2 = st.columns([4, 1])
     with col1:
         repo_path = st.text_input(
-            "Repository path:",
+            "Repository path or GitHub URL:",
             value=".",
-            help="Absolute or relative path to repository root"
+            help="Use an absolute/relative path or a git URL such as https://github.com/org/repo.git"
         )
     with col2:
         ingest_button = st.button("Ingest", use_container_width=True)
@@ -143,6 +143,8 @@ with tab1:
                     f"✅ Indexed {result['files_ingested']} files "
                     f"into {result['chunks_created']} chunks"
                 )
+                if result.get("source_type") == "git":
+                    st.caption(f"Cloned source to {result.get('repo_path')}")
             else:
                 st.error(f"❌ {result.get('message', 'Unknown error')}")
         else:

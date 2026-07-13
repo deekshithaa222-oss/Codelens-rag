@@ -27,7 +27,7 @@ class ChromaStore:
         """Initialize ChromaDB client lazily."""
         try:
             import chromadb
-            self._client = chromadb.Client()
+            self._client = chromadb.PersistentClient(path=str(self.persist_dir))
             self._collection = self._client.get_or_create_collection(
                 name="codelens",
                 metadata={"hnsw:space": "cosine"}

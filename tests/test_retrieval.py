@@ -36,6 +36,28 @@ def bm25():
     return BM25Retriever()
 
 
+class TestRepositoryLoader:
+    """Test repository source loading."""
+
+    def test_detects_git_urls(self):
+        """Test GitHub/git URL detection."""
+        assert RepositoryLoader.is_git_url("https://github.com/org/repo.git")
+        assert RepositoryLoader.is_git_url("git@github.com:org/repo.git")
+        assert not RepositoryLoader.is_git_url("/tmp/local-repo")
+
+    def test_loader_skips_codelens_cache(self, tmp_path):
+        """Test that generated CodeLens cache files are not ingested."""
+        source_file = tmp_path / "app.py"
+        source_file.write_text("def handler():\n    return 'ok'\n")
+        cache_file = tmp_path / ".codelens" / "code_graph.json"
+        cache_file.parent.mkdir()
+        cache_file.write_text('{"generated": true}')
+
+        files = RepositoryLoader(str(tmp_path)).load()
+
+        assert [file["path"] for file in files] == ["app.py"]
+
+
 class TestChunking:
     """Test code chunking."""
 
