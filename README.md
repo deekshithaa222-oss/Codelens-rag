@@ -2,6 +2,8 @@
 
 An enterprise-grade AI code intelligence platform with four defensible differentiators: **AST-aware chunking**, **hybrid dense+sparse retrieval**, **change impact analysis**, and **offline faithfulness evaluation**.
 
+For a concise interview narrative covering design choices, tradeoffs, evaluation, and lessons learned, see [`STAR_STORY.md`](STAR_STORY.md).
+
 ## Quick Start
 
 ### Prerequisites
