@@ -51,11 +51,38 @@ The final application could ingest GitHub repositories, build a persistent searc
 
 Non-technical users could access the core workflow through Streamlit. Developers could access the same workflow directly from MCP-compatible IDEs or AI chat clients without needing to learn custom API endpoints or manually format JSON payloads. The project stood out by combining AST-aware parsing, hybrid retrieval, local embeddings, ChromaDB vector storage, BM25 keyword search, local LLM inference through Ollama, graph-based change-impact analysis, optional LLM explanations, Dockerized deployment, and MCP-based extensibility.
 
-For evaluation, I used public GitHub repositories and manually created a small set of 25 repository-specific questions. For each question, I recorded the expected file, function, class, or route that should be retrieved. I then checked whether the expected result appeared within the top five retrieved chunks. The hybrid ChromaDB and BM25 retrieval pipeline returned the expected result for 22 of 25 questions, giving an 88% top-five retrieval success rate. I also checked answer grounding with offline faithfulness scoring, and 21 of 25 answers were fully supported by the retrieved source context, giving an 84% grounded-answer rate.
+CodeLens won second place at WEHack 2026.
+
+## Evaluation and Testing
+
+For evaluation, I used public GitHub repositories and manually created a small benchmark of 25 repository-specific questions. I did not just ask generic questions; for each question, I wrote down the expected file, function, class, API route, or symbol that should appear in the retrieved results.
+
+For example:
+
+- Question: "Where is authentication handled?"
+- Expected result: the auth-related file or token validation function should appear in the top retrieved chunks.
+- Question: "Where is this API route defined?"
+- Expected result: the route handler file and function should appear in the top retrieved chunks.
+- Question: "Where is this config variable used?"
+- Expected result: the file containing the exact variable usage should appear in the top retrieved chunks.
+
+I evaluated retrieval by checking whether the expected file or function appeared within the top five retrieved chunks. The hybrid ChromaDB and BM25 retrieval pipeline returned the expected result for 22 of 25 questions, giving an 88% top-five retrieval success rate.
+
+I also evaluated answer grounding. After the system generated an answer, I checked whether the answer was supported by the retrieved source context using the offline faithfulness scorer. In that evaluation, 21 of 25 answers were fully supported by the retrieved source context, giving an 84% grounded-answer rate.
+
+In addition to the public-repo evaluation, I tested the backend with `pytest`. The automated tests covered:
+
+- AST/code chunking, including preserving function and class content.
+- BM25 indexing and keyword retrieval.
+- Git URL detection for GitHub repository ingestion.
+- Filtering generated `.codelens` cache files out of repository ingestion.
+- Faithfulness score range and hallucination-risk checks.
+- Dependency graph construction for imports, functions, classes, and calls.
+- Change-impact analysis for dependent files and suggested tests.
+- Graph-cache reuse for unchanged files.
+- The impact-analysis LLM prompt contract, including telling the LLM that graph results are the source of truth and not to invent files or risks.
 
 For a hackathon, this evaluation was enough to demonstrate that the core RAG pipeline worked, but I would not treat it as a full production benchmark. A stronger evaluation would include more repositories, more programming languages, larger question sets, baseline comparisons against BM25-only and embedding-only retrieval, latency measurements, hallucination tracking, and human review of answer quality.
-
-CodeLens won second place at WEHack 2026.
 
 ## Reflection
 
